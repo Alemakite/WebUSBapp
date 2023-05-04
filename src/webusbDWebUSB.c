@@ -1,17 +1,3 @@
-/*
- * Copyright (c) 2015-2019 Intel Corporation
- *
- * SPDX-License-Identifier: Apache-2.0
- */
-
-/**
- * @file
- * @brief WebUSB enabled custom class driver
- *
- * This is a modified version of CDC ACM class driver
- * to support the WebUSB.
- */
-
 #define LOG_LEVEL CONFIG_USB_DEVICE_LOG_LEVEL
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(webusb);
@@ -43,10 +29,12 @@ LOG_MODULE_REGISTER(webusb);
 
 static struct webusb_req_handlers *req_handlers;
 
+#define TX_MEM_ERROR 	0x05
+#define TX_SIZE			20000
+//setting up a buffers for echoing received data
 uint8_t rx_buf[WEBUSB_BULK_EP_MPS];
-
-//setting up a buffer for echoing received data
-uint8_t bigbuff[20000];
+static uint8_t tx_buf[TX_SIZE];
+static size_t bytes_count = 0;
 
 //template for interface descriptors
 #define INITIALIZER_IF(num_ep, iface_class)				\
@@ -138,40 +126,35 @@ void webusb_register_request_handlers(struct webusb_req_handlers *handlers){
 	req_handlers = handlers;
 }
 
-static void webusb_write_cb(uint8_t ep, int size, void *priv)
-{
-	printf(" This is write callback, ep %x size %u", ep, size);
-	memset(bigbuff,0, sizeof(bigbuff)); //zero the array to prevent going over tranfer capabilities 
+static void webusb_write_cb(uint8_t ep, int size, void *priv){
+	//printf("\n This is write callback, ep %x size %u", ep, size);
+	bytes_count = 0;
+	memset(tx_buf, 0, sizeof(tx_buf)); //zeroing the receiving array
 }
 
-static void webusb_read_cb(uint8_t ep, int size, void *priv)
-{
+static void webusb_read_cb(uint8_t ep, int size, void *priv){
 	struct usb_cfg_data *cfg = priv;
-
-	//if rx-buff is empty, read data
-	//else write data back
-	if (size <= 0) goto done;
-	// char msg[4];
-	// for(int i = 0; i < 4; i++) msg[i] = bigbuff[i];
-	// if (msg == "read"){
-	// 	struct mcuboot_img_header *readHeader;
-	// 	if(boot_read_bank_header(2, readHeader, sizeof(*readHeader)) == 0){
-	// 		uint8_t version[8];
-
-	// 		version[0] = readHeader->image_size;
-	// 		usb_transfer(cfg->endpoint[WEBUSB_IN_EP_IDX].ep_addr, version, sizeof(version),
-	// 	     USB_TRANS_WRITE, webusb_write_cb, cfg);
-	// 	}
-	// }
-	usb_transfer(cfg->endpoint[WEBUSB_IN_EP_IDX].ep_addr, rx_buf, size,
-		     USB_TRANS_WRITE, webusb_write_cb, cfg);
+	//printf("\nSize count: %d", size);
+	
+	if(size <= 0) goto done;
+	else {
+		//printf("\ntransfer still active");
+		memcpy(tx_buf + bytes_count, rx_buf, size);
+		bytes_count += size;
+		//printf("\nBytes count: %zu", bytes_count);
+		if(size < WEBUSB_BULK_EP_MPS && size > 0){
+		//	printf("\ntransfer finished, ready to echo");
+			usb_transfer(cfg->endpoint[WEBUSB_IN_EP_IDX].ep_addr, tx_buf, bytes_count,
+				USB_TRANS_WRITE, webusb_write_cb, cfg);
+		}
+	}
 done:
-	usb_transfer(ep, rx_buf, sizeof(rx_buf), 
-			 USB_TRANS_READ, webusb_read_cb, cfg);
+	usb_transfer(ep, rx_buf, sizeof(rx_buf), USB_TRANS_READ, webusb_read_cb, cfg);
+	//printf("\nReading");
 }
 
 /**
- * @brief Callback Bused to know the USB connection status
+ * @brief Callback used to know the USB connection status
  *
  * @param status USB device status code.
  */
@@ -191,7 +174,6 @@ static void webusb_dev_status_cb(struct usb_cfg_data *cfg,
 		break;
 	case USB_DC_CONNECTED:
 		LOG_DBG("USB device connected");
-		
 		break;
 	case USB_DC_CONFIGURED:
 		LOG_DBG("USB device configured");
@@ -225,6 +207,7 @@ static struct usb_ep_cfg_data webusb_ep_data[] = {
 		.ep_addr = AUTO_EP_OUT
 	}
 };
+
 //USB Device configuration structure
 USBD_DEFINE_CFG_DATA(webusb_config) = {
 	.usb_device_description = NULL,

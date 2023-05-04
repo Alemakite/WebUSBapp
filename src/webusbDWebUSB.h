@@ -1,15 +1,3 @@
-/*
- * Copyright (c) 2015-2019 Intel Corporation
- *
- * SPDX-License-Identifier: Apache-2.0
- */
-
-/**
- * @file
- * @brief WebUSB enabled custom class driver header file
- *
- * Header file for WebUSB enabled custom class driver
- */
 
 #ifndef __WEBUSB_SERIAL_H__
 #define __WEBUSB_SERIAL_H__

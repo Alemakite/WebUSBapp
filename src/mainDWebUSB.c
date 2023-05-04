@@ -1,11 +1,3 @@
-/**
- * @file
- * @brief Sample app for WebUSB enabled custom class driver.
- *
- * Sample app for WebUSB enabled custom class driver. The received
- * data is echoed back to the WebUSB based application running in
- * the browser at host.
- */
 
 #define LOG_LEVEL CONFIG_USB_DEVICE_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -14,13 +6,23 @@ LOG_MODULE_REGISTER(main);
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/usb/usb_device.h>
 #include <zephyr/usb/bos.h>
-#include </home/peter/dfwebusb/zephyr/subsys/dfu/boot/mcuboot.c>
+
+#include <zephyr/dfu/mcuboot.h>
+#include </home/peter/dfwebusb/zephyr/subsys/dfu/boot/mcuboot_priv.h>
 #include "webusb.h"
+#include <stdio.h>
 
 /* Number of allowed origins */
 #define NUMBER_OF_ALLOWED_ORIGINS   1
 
-struct mcuboot_img_header* readHeader;
+//Error for unsuccesful image header read
+#define READFW_ERROR -7
+//structure for storing version data from an image read
+static struct versionSend {
+	uint8_t maj;
+	uint8_t min;
+	uint16_t rev;
+} v;
 
 /* Predefined response to control commands related to MS OS 2.0 descriptors */
 static const uint8_t msos2_descriptor[] = {
@@ -214,8 +216,7 @@ static const uint8_t msos1_compatid_descriptor[] = {
  * @return  0 on success, negative errno code on fail
  */
 int custom_handle_req(struct usb_setup_packet *pSetup,
-		      int32_t *len, uint8_t **data)
-{
+		      int32_t *len, uint8_t **data){
 	if (usb_reqtype_is_to_device(pSetup)) {
 		return -ENOTSUP;
 	}
@@ -228,12 +229,6 @@ int custom_handle_req(struct usb_setup_packet *pSetup,
 		LOG_DBG("Get MS OS Descriptor v1 string");
 
 		return 0;
-	}
-
-	if (pSetup->bRequest == 0xa2) {
-		boot_read_bank_header(pSetup->wValue, readHeader, sizeof(readHeader));
-		*data = (uint8_t *)(&readHeader);
-		*len = sizeof(readHeader);
 	}
 
 	return -EINVAL;
@@ -250,16 +245,18 @@ int custom_handle_req(struct usb_setup_packet *pSetup,
  * @return  0 on success, negative errno code on fail.
  */
 int vendor_handle_req(struct usb_setup_packet *pSetup,
-		      int32_t *len, uint8_t **data)
-{
-//Requests to device
+		      int32_t *len, uint8_t **data){
+	//printf("\nVendor URB received, \nRequest: 0x%02x ,", pSetup->bRequest);
+	//printf("\nIndex: 0x%02x ,", pSetup->wIndex);
+	//printf("\nValue: 0x%02x ,", pSetup->wValue);
+
+	//Disregard requests with direction set to "to device"
 	if (usb_reqtype_is_to_device(pSetup)) {
-		if (pSetup->bRequest == 0xa2) {
-        boot_read_bank_header(pSetup->wValue, readHeader, sizeof(readHeader));
-		}
-		//return -ENOTSUP;
+		return -ENOTSUP;
 	}
-//Requests to host
+
+	//Requests to host:
+
 	/* Get Allowed origins request */
     if (pSetup->bRequest == 0x01 && pSetup->wIndex == 0x01) {
         *data = (uint8_t *)(&webusb_allowed_origins);
@@ -309,12 +306,23 @@ int vendor_handle_req(struct usb_setup_packet *pSetup,
 
         return 0;
     } 
-	/* Get DFU Read request */
-	else if (pSetup->bRequest == 0xa2) {
-		*data = (uint8_t *)(&readHeader);
-        *len = sizeof(readHeader);
+	/* Get ReadFW request */
+	else if (pSetup->bRequest == 0x0f) {
+		static struct mcuboot_img_header readHeader; //16bytes size
+		int rc = boot_read_bank_header(1, &readHeader, sizeof(readHeader));
+		//printf("\nHeader read status: %d",rc);
+		if(rc < 0){
+		return READFW_ERROR;
+		}
+		else {
+			v.maj = readHeader.h.v1.sem_ver.major;
+			v.min = readHeader.h.v1.sem_ver.minor;
+			v.rev = readHeader.h.v1.sem_ver.revision; 
+			*data = (uint8_t *)(&v);
+			*len = sizeof(v);
+			return 0;
+		} 
     }
-    
 	return -ENOTSUP;
 }
 
@@ -324,8 +332,7 @@ static struct webusb_req_handlers req_handlers = {
 	.vendor_handler = vendor_handle_req,
 };
 
-void main(void)
-{
+void main(void){
 	int ret;
 
 	LOG_DBG("");
