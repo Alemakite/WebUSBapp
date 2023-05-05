@@ -8,8 +8,7 @@ LOG_MODULE_REGISTER(main);
 #include <zephyr/usb/bos.h>
 
 #include <zephyr/dfu/mcuboot.h>
-#include </home/peter/dfwebusb/zephyr/subsys/dfu/boot/mcuboot_priv.h>
-#include "webusb.h"
+#include "dWebUSB.h"
 #include <stdio.h>
 
 /* Number of allowed origins */
@@ -309,7 +308,7 @@ int vendor_handle_req(struct usb_setup_packet *pSetup,
 	/* Get ReadFW request */
 	else if (pSetup->bRequest == 0x0f) {
 		static struct mcuboot_img_header readHeader; //16bytes size
-		int rc = boot_read_bank_header(1, &readHeader, sizeof(readHeader));
+		int rc = boot_read_bank_header(2, &readHeader, sizeof(readHeader));
 		//printf("\nHeader read status: %d",rc);
 		if(rc < 0){
 		return READFW_ERROR;

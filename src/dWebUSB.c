@@ -6,7 +6,7 @@ LOG_MODULE_REGISTER(webusb);
 #include <zephyr/usb/usb_device.h>
 #include <usb_descriptor.h>
 
-#include "webusb.h"
+#include "dWebUSB.h"
 
 #include <stdio.h>
 #include <stdlib.h>
